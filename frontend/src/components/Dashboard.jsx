@@ -81,6 +81,27 @@ export default function Dashboard({
     fetchCustomers();
   }, [fetchCustomers]);
 
+  // Handle quick 1-click pause for today when tiffin was not taken
+  const handleNotTakenToday = async (customer) => {
+    const today = new Date().toISOString().split('T')[0];
+    if (!window.confirm(`Mark tiffin NOT TAKEN for ${customer.name} today (${today})?\n\nThis will pause today's service and deduct 1 day from the monthly bill.`)) {
+      return;
+    }
+    try {
+      const res = await apiFetch(`/api/customers/${customer.id}/pause`, {
+        method: 'POST',
+        body: JSON.stringify({ startDate: today, endDate: today })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to mark tiffin not taken');
+      showToast(`Tiffin marked NOT TAKEN for ${customer.name} today (${today})! 1 day deducted.`, 'success');
+      fetchStats();
+      fetchCustomers();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
   // Handle direct Resume action
   const handleResume = async (customer) => {
     if (!window.confirm(`Resume service for ${customer.name}? Daily billing will resume from today.`)) {
@@ -316,14 +337,25 @@ export default function Dashboard({
                           ▶️ Resume
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className="btn btn-warning btn-sm"
-                          onClick={() => onPauseCustomer(c)}
-                          title="Pause service for specified dates"
-                        >
-                          ⏸️ Pause
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-warning btn-sm"
+                            style={{ background: '#f59e0b', color: '#fff', fontWeight: 600 }}
+                            onClick={() => handleNotTakenToday(c)}
+                            title="Single-click: mark tiffin NOT TAKEN today (deducts 1 day)"
+                          >
+                            🚫 Not Taken Today
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => onPauseCustomer(c)}
+                            title="Pause service for custom date range"
+                          >
+                            ⏸️ Pause Dates
+                          </button>
+                        </>
                       )}
 
                       <button

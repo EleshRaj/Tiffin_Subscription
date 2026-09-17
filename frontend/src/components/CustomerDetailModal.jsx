@@ -98,7 +98,7 @@ export default function CustomerDetailModal({
               </div>
               <div>
                 <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-secondary)', display: 'block' }}>Delivery Schedule</span>
-                <strong style={{ fontSize: 'var(--fs-base)' }}>Monday to Friday</strong>
+                <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--clr-success)' }}>All 7 Days (Mon–Sun)</strong>
               </div>
             </div>
 
@@ -112,13 +112,16 @@ export default function CustomerDetailModal({
                   ▶️ Resume Service
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="btn btn-warning btn-sm"
-                  onClick={() => { onClose(); onPause(customer); }}
-                >
-                  ⏸️ Pause Service
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-warning btn-sm"
+                    style={{ background: '#f59e0b', color: '#fff' }}
+                    onClick={() => { onClose(); onPause(customer); }}
+                  >
+                    ⏸️ Pause / Not Taken
+                  </button>
+                </>
               )}
 
               <button
