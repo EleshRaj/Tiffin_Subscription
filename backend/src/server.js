@@ -15,8 +15,13 @@ require('./config/db');
 
 // ── Routes ─────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/customers/import', require('./routes/import.routes'));
 app.use('/api/customers', require('./routes/customer.routes'));
+app.use('/api/subscriptions', require('./routes/subscription.routes'));
 app.use('/api/stats', require('./routes/stats.routes'));
+
+// T1 Clock & Outbox routes at root level (POST /clock, GET /outbox)
+app.use('/', require('./routes/clock.routes'));
 
 // ── Health check ───────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

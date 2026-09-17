@@ -33,13 +33,20 @@ exports.create = (req, res) => {
     const customerId = custResult.lastInsertRowid;
 
     // Create active subscription
-    db.prepare(
+    const subResult = db.prepare(
       'INSERT INTO subscriptions (customer_id, monthly_price, start_date, status, tiffin_type) VALUES (?, ?, ?, ?, ?)'
     ).run(customerId, monthlyPrice, startDate, 'ACTIVE', selectedTiffinType);
 
+    const subscriptionId = subResult.lastInsertRowid;
+
+    // Create initial subscription assignment
+    db.prepare(
+      'INSERT INTO subscription_assignments (subscription_id, customer_id, start_date, end_date) VALUES (?, ?, ?, NULL)'
+    ).run(subscriptionId, customerId, startDate);
+
     res.status(201).json({
       message: 'Customer created and subscribed successfully.',
-      customer: { id: customerId, name, phone, monthlyPrice, startDate, status: 'ACTIVE', tiffinType: selectedTiffinType }
+      customer: { id: customerId, name, phone, monthlyPrice, startDate, status: 'ACTIVE', tiffinType: selectedTiffinType, subscriptionId }
     });
   } catch (err) {
     console.error('Create customer error:', err);
@@ -140,7 +147,19 @@ exports.getById = (req, res) => {
         ).all(customer.subscription_id)
       : [];
 
-    res.json({ customer, pauses });
+    // Fetch assignment history (T6 Transfer)
+    const assignments = customer.subscription_id
+      ? db.prepare(`
+          SELECT sa.id, sa.customer_id, sa.start_date, sa.end_date, sa.created_at,
+                 c.name as customer_name, c.phone as customer_phone
+          FROM subscription_assignments sa
+          JOIN customers c ON c.id = sa.customer_id
+          WHERE sa.subscription_id = ?
+          ORDER BY sa.id ASC
+        `).all(customer.subscription_id)
+      : [];
+
+    res.json({ customer, pauses, assignments });
   } catch (err) {
     console.error('Get customer error:', err);
     res.status(500).json({ message: 'Internal server error.' });

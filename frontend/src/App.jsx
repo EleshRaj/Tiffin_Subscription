@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import LandingPage from './components/LandingPage';
@@ -8,6 +8,9 @@ import CustomerModal from './components/CustomerModal';
 import PauseModal from './components/PauseModal';
 import BillModal from './components/BillModal';
 import CustomerDetailModal from './components/CustomerDetailModal';
+import TransferModal from './components/TransferModal';
+import ImportModal from './components/ImportModal';
+import OutboxModal from './components/OutboxModal';
 
 function MainApp() {
   const { user } = useAuth();
@@ -32,6 +35,17 @@ function MainApp() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
+  // T6: Transfer modal state
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [customerToTransfer, setCustomerToTransfer] = useState(null);
+
+  // T4: Import modal state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+
+  // T1: Outbox modal state & Clock state
+  const [outboxModalOpen, setOutboxModalOpen] = useState(false);
+  const [simDate, setSimDate] = useState('2026-09-17');
+
   // Dashboard reload key
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -42,7 +56,47 @@ function MainApp() {
     setToast({ message, type });
     setTimeout(() => {
       setToast((prev) => (prev?.message === message ? null : prev));
-    }, 4000);
+    }, 4500);
+  };
+
+  // Fetch initial simulated clock
+  useEffect(() => {
+    async function loadClock() {
+      try {
+        const res = await fetch('http://localhost:5000/clock');
+        const data = await res.json();
+        if (res.ok && data.currentDate) {
+          setSimDate(data.currentDate);
+        }
+      } catch (e) {
+        console.error('Failed to load simulated clock:', e);
+      }
+    }
+    loadClock();
+  }, []);
+
+  // Advance clock handler (POST /clock)
+  const handleAdvanceClock = async () => {
+    try {
+      const res = await fetch('http://localhost:5000/clock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}) // advance by 1 day
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSimDate(data.currentDate);
+        showToast(
+          data.isWeekday
+            ? `🕒 Advanced to ${data.currentDate}: ${data.generatedEvents} delivery notifications generated!`
+            : `🕒 Advanced to ${data.currentDate} (Weekend — No deliveries scheduled).`,
+          'success'
+        );
+        setReloadKey((k) => k + 1);
+      }
+    } catch (e) {
+      showToast('Failed to advance clock simulation.', 'error');
+    }
   };
 
   const handleOpenLogin = () => {
@@ -70,6 +124,11 @@ function MainApp() {
     setPauseModalOpen(true);
   };
 
+  const handleTransferCustomer = (customer) => {
+    setCustomerToTransfer(customer);
+    setTransferModalOpen(true);
+  };
+
   const handleViewBill = (customer) => {
     setSelectedForBill(customer);
     setBillModalOpen(true);
@@ -85,6 +144,10 @@ function MainApp() {
       <Navbar
         onLogin={handleOpenLogin}
         onRegister={handleOpenRegister}
+        simDate={simDate}
+        onAdvanceClock={handleAdvanceClock}
+        onOpenOutbox={() => setOutboxModalOpen(true)}
+        onOpenImport={() => setImportModalOpen(true)}
       />
 
       {/* Global Toast Notification */}
@@ -95,7 +158,7 @@ function MainApp() {
             top: '80px',
             right: '24px',
             zIndex: 999,
-            maxWidth: '400px'
+            maxWidth: '450px'
           }}
         >
           <div className={`alert alert-${toast.type}`} style={{ boxShadow: 'var(--shadow-lg)' }}>
@@ -112,8 +175,11 @@ function MainApp() {
             onAddCustomer={handleAddCustomer}
             onEditCustomer={handleEditCustomer}
             onPauseCustomer={handlePauseCustomer}
+            onTransferCustomer={handleTransferCustomer}
             onViewBill={handleViewBill}
             onViewDetails={handleViewDetails}
+            onOpenImport={() => setImportModalOpen(true)}
+            simDate={simDate}
             showToast={showToast}
           />
         ) : (
@@ -163,16 +229,46 @@ function MainApp() {
         onClose={() => setDetailModalOpen(false)}
         customerId={selectedCustomerId}
         onPause={handlePauseCustomer}
-        onResume={(cust) => {
-          // Trigger resume directly
+        onResume={() => {
           setReloadKey((k) => k + 1);
         }}
         onBill={handleViewBill}
         onEdit={handleEditCustomer}
-        onDelete={(cust) => {
+        onDelete={() => {
           setReloadKey((k) => k + 1);
         }}
       />
+
+      {/* T6 Transfer Modal */}
+      {transferModalOpen && customerToTransfer && (
+        <TransferModal
+          customer={customerToTransfer}
+          onClose={() => setTransferModalOpen(false)}
+          onSuccess={() => {
+            setReloadKey((k) => k + 1);
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* T4 CSV Import Modal */}
+      {importModalOpen && (
+        <ImportModal
+          onClose={() => setImportModalOpen(false)}
+          onSuccess={() => {
+            setReloadKey((k) => k + 1);
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* T1 Outbox Modal */}
+      {outboxModalOpen && (
+        <OutboxModal
+          onClose={() => setOutboxModalOpen(false)}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 }

@@ -89,7 +89,7 @@ export default function BillModal({ isOpen, onClose, customer }) {
               <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 700 }}>{bill.customerName}</div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-secondary)' }}>Phone: {bill.customerPhone}</div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-primary)', fontWeight: 600 }}>
-                Period: {selectedMonth} (7-Day Weekly Service)
+                Period: {selectedMonth} (Monday–Friday Weekday Service)
               </div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text)', fontWeight: 600, marginTop: '2px' }}>
                 🍱 Tiffin Type: {bill.tiffinType || 'Standard Veg Thali'}
@@ -102,31 +102,52 @@ export default function BillModal({ isOpen, onClose, customer }) {
             </div>
 
             <div className="bill-row">
-              <span className="bill-label">Total Delivery Days in Month</span>
-              <span className="bill-value">{bill.totalDays || bill.totalWeekdaysInMonth} days</span>
+              <span className="bill-label">Total Service Weekdays in Month</span>
+              <span className="bill-value">{bill.totalWeekdays || bill.totalDays} days</span>
             </div>
 
             <div className="bill-row">
-              <span className="bill-label">Per-Day Rate (Plan ÷ Total Days)</span>
+              <span className="bill-label">Per-Day Rate (Plan ÷ Total Weekdays)</span>
               <span className="bill-value">₹{bill.perDayRate.toFixed(2)}</span>
             </div>
 
             <div className="bill-row" style={{ color: (bill.pausedDays || bill.pausedWeekdays) > 0 ? 'var(--clr-warning)' : 'inherit' }}>
-              <span className="bill-label">Paused Days (Tiffin Not Taken)</span>
+              <span className="bill-label">Paused Weekdays</span>
               <span className="bill-value">-{(bill.pausedDays !== undefined ? bill.pausedDays : bill.pausedWeekdays)} days</span>
             </div>
 
             <div className="bill-row" style={{ color: 'var(--clr-success)', fontWeight: 600 }}>
-              <span className="bill-label">Actual Days Served</span>
+              <span className="bill-label">Total Weekdays Served</span>
               <span className="bill-value">{bill.daysServed} days</span>
             </div>
 
             <div className="bill-row total">
-              <span className="bill-label">Total Payable Amount</span>
+              <span className="bill-label">Total Billed Amount</span>
               <span className="bill-value" style={{ color: 'var(--clr-primary)', fontSize: 'var(--fs-2xl)' }}>
                 ₹{Number(bill.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
+
+            {bill.isSplit && bill.splits && (
+              <div style={{ background: 'rgba(37, 99, 235, 0.08)', border: '1px solid var(--clr-primary)', borderRadius: 'var(--radius-md)', padding: '0.875rem', marginTop: '1rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--clr-primary)', marginBottom: '0.5rem', fontSize: 'var(--fs-sm)' }}>
+                  🔀 Mid-Cycle Transferred Subscription Split
+                </div>
+                {bill.splits.map((s, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0', borderBottom: idx < bill.splits.length - 1 ? '1px dashed var(--clr-border)' : 'none', fontSize: 'var(--fs-sm)' }}>
+                    <div>
+                      <strong>{s.customerName}</strong>
+                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-secondary)', marginLeft: '6px' }}>
+                        ({s.servedDays} weekdays served)
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, color: 'var(--clr-primary)' }}>
+                      ₹{Number(s.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {bill.pauseDetails && bill.pauseDetails.length > 0 ? (
               <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--clr-border)' }}>

@@ -1,155 +1,98 @@
 # Development Reasoning & Architectural Decisions (`REASONING.md`)
 
-This document outlines the technical reasoning, architectural decisions, trade-offs, and implementation details for the **Tiffin Subscription Management System** (`Tif Tof`).
+This document outlines the technical reasoning, architectural decisions, trade-offs, and implementation details for the **Tiffin Subscription Management System** (`Tif Tof`) built according to the **Builder Round Master Specification**.
 
 ---
 
 ## 1. Problem Understanding
 
-A home-style tiffin/lunch service operates on recurring monthly meal deliveries. Customers frequently pause service due to travel, office leaves, fasting, or unexpected commitments. In traditional manual ledger systems:
-- Billing calculations are error-prone because owners struggle to calculate accurate deductions for multiple pause intervals.
-- Dispute occurs when customers are billed for days on which tiffin was not delivered.
-- Managing pause dates, resumptions, meal preferences (Veg/Non-Veg/Jain), and contact records on paper creates operational chaos.
+A home-style tiffin/lunch service operates on recurring monthly meal deliveries on **weekdays (Monday to Friday)**. Customers frequently pause service due to travel, office holidays, festivals, or personal emergencies. In traditional manual operations using paper notebooks:
+- Billing calculations are error-prone because owners struggle to calculate manual deductions across multiple disjoint pause intervals.
+- Disputes arise when customers are charged for days they did not receive meals.
+- When a customer moves or hands over their subscription to a flatmate/colleague mid-cycle, tracking split billing becomes chaotic.
+- Manually verifying who needs delivery every morning is slow and leads to missed or wasted meals.
 
-**Core Objective**: Automate customer subscription lifecycle management and compute exact pro-rated bills where customers pay only for days meals were delivered.
-
----
-
-## 2. Requirements Identified
-
-### Functional Requirements
-- **Authentication**: Secure registration and login for tiffin business owners using password hashing and token-based sessions.
-- **Customer Management**: Full CRUD operations for customer records (name, phone number).
-- **Tiffin Service Specification**: Ability to assign and describe meal types (Standard Veg, Non-Veg, Jain, Mini Thali, Diet/High Protein, Custom).
-- **Subscription Lifecycle**: Manage monthly plan pricing, start dates, and active vs. paused states.
-- **Pause & Resume**: Support multi-day pause intervals and single-click pauses ("Not Taken Today"), with overlap prevention.
-- **Accurate Pro-Rated Billing**: Calculate monthly charges dynamically based only on actual days served.
-- **Search & Discovery**: Fast lookup of customers using their phone number.
-- **Pagination & Sorting**: Efficiently browse large customer lists with server-side pagination and whitelisted sorting.
-
-### Non-Functional Requirements
-- Relational integrity and local persistence with zero cloud database dependency.
-- Responsive, clean user interface tailored for fast daily operations on mobile and desktop.
-- Modular, testable backend business logic.
+**Core Objective**: Build a reliable, testable, and deterministic full-stack system that handles customer subscriptions, service pauses, weekday pro-rated billing, mid-cycle transfers with split billing, deterministic delivery notifications via simulated clock, and messy CSV ingestion.
 
 ---
 
-## 3. Feature Decisions
+## 2. Builder Round Architectural Decisions
 
-- **7-Day Service Support**: Extended delivery scheduling to support 7 days a week (Monday to Sunday) so catering services operating every day can accurately pro-rate without manual adjustments.
-- **Single-Click "Not Taken Today"**: Added a direct action button on the dashboard for instant single-day pause when a customer calls in the morning to skip delivery.
-- **Printable Statements**: Integrated print-friendly invoice views in the bill modal allowing owners to generate PDF statements or physical slips directly from the browser.
-- **[TO BE FILLED BY DEVELOPER]** *(Additional personal motivations or business context for feature prioritization)*
-
----
-
-## 4. Database Design Decisions
-
-- **Engine**: SQLite (`better-sqlite3`) in Write-Ahead Logging (`WAL`) mode with `PRAGMA foreign_keys = ON`.
-- **Rationale**:
-  - Zero external infrastructure requirement allows immediate execution and local testing.
-  - Synchronous execution model of `better-sqlite3` minimizes asynchronous overhead.
-  - Referential integrity: Deleting a customer cascades to delete their subscriptions and pause intervals automatically.
-- **Entity Design**:
-  - `users`: Stores owner credentials with unique email constraint.
-  - `customers`: Associated with an owner ID, indexed on `phone` for fast search.
-  - `subscriptions`: Separated from customers to allow future multi-subscription history and custom pricing per plan. Includes `tiffin_type` column.
-  - `pause_periods`: Stores discrete start and end dates with foreign keys to subscriptions.
+### A. Core Weekday Service Rule (Monday → Friday)
+- **Decision**: Service days are strictly Monday through Friday. Weekends (Saturday and Sunday) are non-service days (0 meals delivered, 0 charge).
+- **Reasoning**: Standard home lunch services operate during the working week. To eliminate calculation discrepancies:
+  - Total service days in a month is calculated as the exact count of weekdays in that calendar month (e.g. 22 weekdays in September 2026).
+  - Pauses occurring over weekends (e.g. Friday to Monday) only deduct the actual weekdays (Friday and Monday), never charging or deducting for Saturday or Sunday.
+  - An isolated, shared helper `calendar.service.js` serves as the single source of truth for `isWeekday` and month enumeration across billing, delivery eligibility, and dashboard counters.
 
 ---
 
-## 5. API Design Decisions
-
-- **RESTful Endpoints**: Clear resource hierarchy (`/api/customers`, `/api/customers/:id/pause`, `/api/customers/:id/bill`).
-- **Separation of Concerns**: Controllers delegate domain arithmetic to an isolated service layer (`billing.service.js`).
-- **Conflict Handling**: Overlapping pause requests return HTTP `409 Conflict` instead of corrupting data.
-- **Security Middleware**: Centralized JWT verification middleware attaches verified owner identity (`req.user.id`) to request contexts.
-
----
-
-## 6. Frontend Design Decisions
-
-- **Vanilla CSS Design System**: Custom tokens and component classes in `index.css` (warm food-tech palette: saffron orange, warm amber, mint green) to avoid third-party CSS bloat while maintaining responsive UX.
-- **Context API for State**: `AuthContext` provides global authentication status and a unified `apiFetch` wrapper that automatically injects Bearer tokens and handles session expiration.
-- **Live Preview Feedback**: Pause modal dynamically computes and renders the number of days affected before submission.
+### B. Level 1 (T1) — Daily Delivery Notifications & Clock Simulation
+- **Decision**: Implemented an internal mock Notification Service backed by an `outbox_events` table and triggered via `POST /clock`.
+- **Reasoning**:
+  - The grader cannot depend on the physical system clock or external third-party SMS/WhatsApp APIs (Twilio, SendGrid) which introduce network flakiness and authentication blockers.
+  - `POST /clock` allows the grader to simulate any target business date deterministically.
+  - The Notification Service evaluates eligibility:
+    1. Active subscription
+    2. Target date is a weekday (Mon–Fri)
+    3. Target date is not inside any recorded pause period
+    4. Belongs to the customer holding the active assignment on that date
+  - **Idempotency**: An internal unique constraint `UNIQUE(subscription_id, customer_id, event_date, event_type)` ensures that calling `POST /clock` multiple times on the same date never generates duplicate notifications.
+  - `GET /outbox` exposes the notification queue for inspection by both automated graders and the UI inspector.
 
 ---
 
-## 7. Authentication Approach
-
-- **Password Security**: Passwords hashed using `bcryptjs` (salt rounds: 10).
-- **Session Strategy**: Stateless JSON Web Tokens (`jsonwebtoken`) signed with a server secret key, stored in client `localStorage`.
-- **Route Protection**: Bearer token authorization header checked via middleware on all `/api/customers` and `/api/stats` routes.
-
----
-
-## 8. Search Approach
-
-- **Implementation**: SQL parameterized `LIKE ?` query on `customers.phone` with wildcards (`%${phone}%`).
-- **Optimization**: Dedicated database index `idx_customers_phone` on the `phone` column.
-- **Security**: Parameterized queries eliminate SQL injection vulnerabilities.
-
----
-
-## 9. Pagination Approach
-
-- **Implementation**: SQL `LIMIT ? OFFSET ?` coupled with a separate `COUNT(*)` query.
-- **Behavior**: Sanitized page (min: 1) and limit parameters (bounded between 1 and 50, default: 10), returning `total`, `totalPages`, `page`, and `limit` metadata.
+### C. Level 2 (T6) — Subscription Transfer & Split Billing
+- **Decision**: Introduced a `subscription_assignments` table (`id`, `subscription_id`, `customer_id`, `start_date`, `end_date`) rather than simply overwriting `subscription.customer_id`.
+- **Reasoning**:
+  - Simply changing `customer_id` on the subscription erases historical ownership, making it impossible to audit past deliveries or generate accurate split invoices.
+  - **Transfer Convention**: The transfer date is the **first service date** of the new customer.
+    - Dates strictly before `transferDate` belong to Customer A (old customer).
+    - Dates from `transferDate` onward belong to Customer B (new customer).
+  - **Split Invoicing Algorithm**:
+    - Generates all weekdays in the billing cycle.
+    - Filters out paused weekdays (nobody is charged for paused days).
+    - Checks `subscription_assignments` to map each served weekday to the customer who owned the subscription on that specific calendar day.
+    - Computes pro-rated bills proportionally: $\text{Price} \times \text{CustomerServedWeekdays} / \text{TotalCycleWeekdays}$.
 
 ---
 
-## 10. Sorting Approach
-
-- **Implementation**: Server-side sorting using whitelisted columns (`name`, `phone`, `created_at`, `monthly_price`, `status`) to strictly guard against SQL injection.
-- **Cross-Table Joins**: Transparently routes customer attributes (`c.name`, `c.phone`, `c.created_at`) vs. subscription attributes (`s.monthly_price`, `s.status`) in the generated `ORDER BY` clause.
-
----
-
-## 11. Testing Performed
-
-- **Unit Testing (`backend/src/tests/billing.test.js`)**:
-  - Validated 25 edge cases covering zero pauses, single pause, multiple pauses, month-boundary clipping, full-month pause, and financial rounding.
-- **Integration Flow Testing (`backend/src/tests/e2e.test.js`)**:
-  - Automated 10-step full lifecycle test (register $\to$ login $\to$ stats $\to$ customer create $\to$ phone search $\to$ pause $\to$ overlap conflict $\to$ billing $\to$ resume $\to$ updated stats).
-- **Scale Seeding Test (`backend/src/tests/seed_and_test_20.js`)**:
-  - Automated seeding of 22 customers, multi-page pagination checks, and diverse tiffin types.
-- **[TO BE FILLED BY DEVELOPER]** *(Additional manual browser tests or test scenarios executed)*
+### D. Level 3 (T4) — Messy Customer CSV Import & Deduplication
+- **Decision**: Built a dedicated `import.service.js` with phone normalization, multi-format date parsing, and in-memory + database deduplication.
+- **Reasoning**:
+  - Real-world CSV exports from spreadsheets or phone contacts contain messy inputs: mixed date formats (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), phone numbers with spaces, dashes, or `+91`, and blank rows.
+  - **Deduplication Strategy**:
+    - A deterministic rule was selected: **Keep the first valid record for any normalized phone number; classify subsequent valid duplicates as `deduped`.**
+    - Pre-existing phone numbers already stored in the database for that owner are also classified as `deduped`.
+  - **Rejection Strategy**: Records missing mandatory fields (`name`, `phone`, positive `monthly_price`, valid `start_date`) are marked as `rejected` with the exact row number and failure reason recorded in an `errors` array.
+  - The batch inserts all clean unique records in a single database transaction, ensuring atomicity.
 
 ---
 
-## 12. Bugs/Issues Encountered
-
-1. **HTML5 Number Input Step Validation**:
-   - *Symptom*: Entering rounded values like `2000` or `2200` into the monthly price field produced a browser validation error: *"Please enter a valid value. The two nearest valid values are 2191 and 2201."*
-   - *Root Cause*: Input had `min="1"` and `step="10"`. Under HTML5 rules, `(value - min) % step` must equal 0. `(2200 - 1) % 10 = 9 != 0`.
-2. **Missing Tiffin Type Specification**:
-   - *Symptom*: System recorded pricing but did not record whether a customer was receiving Veg, Non-Veg, Jain, or a custom meal.
-3. **[TO BE FILLED BY DEVELOPER]** *(Any other unexpected behavior encountered during local development)*
+### E. Persistence Layer: SQLite via `better-sqlite3`
+- **Decision**: Used `better-sqlite3` in WAL mode with foreign key constraints enabled.
+- **Reasoning**:
+  - Zero external database installation, network overhead, or port collision risks on evaluation machines.
+  - Synchronous execution model matches Express controller execution without Promise race conditions.
+  - ACID compliant transactions guarantee transactional safety for multi-table operations (transfers, batch imports, customer cascading deletes).
 
 ---
 
-## 13. How Issues Were Fixed
+## 3. Verification & Test Suite Strategy
 
-1. **Fixed Step Validation**: Changed `step="10"` to `step="any"` in `CustomerModal.jsx`, allowing arbitrary whole numbers and decimals.
-2. **Added Tiffin Type Support**:
-   - Added `tiffin_type` column to `subscriptions` table with automated schema migration.
-   - Updated controller `create`, `list`, `getById`, and `update` methods.
-   - Added interactive meal plan selection and custom description inputs in the frontend.
-3. **[TO BE FILLED BY DEVELOPER]** *(Details on any personal fixes applied)*
+Four dedicated test suites were implemented to validate every core requirement and edge case:
 
----
-
-## 14. Trade-offs
-
-- **SQLite vs. PostgreSQL/MySQL**: SQLite was chosen for zero-dependency portability and speed. Trade-off: Not natively suited for horizontally scaled multi-server deployments without replication layers (e.g. Litestream).
-- **Client-Side Build vs. SSR**: Vite React SPA was chosen for UI responsiveness and client-side transitions. Trade-off: Requires client JavaScript execution and API proxy configuration.
-- **[TO BE FILLED BY DEVELOPER]** *(Other trade-offs considered during architecture planning)*
-
----
-
-## 15. Future Improvements
-
-- **Payment Gateway Integration**: Direct UPI / QR-code collection and Razorpay/Stripe checkout.
-- **Automated WhatsApp Alerts**: Daily delivery confirmations and billing statements pushed via WhatsApp Business API.
-- **Delivery Staff Route Optimization**: Driver mobile view with turn-by-turn route ordering based on customer addresses.
-- **[TO BE FILLED BY DEVELOPER]** *(Personal vision for subsequent iterations)*
+1. **`billing.test.js` (10 Mandatory Test Cases)**:
+   - Evaluated 0 pauses, single mid-week pause, multiple disjoint pauses, weekend pauses (ensuring Sat/Sun are not deducted), cross-month pauses, 100% paused months, mid-cycle transfers without pauses, transfers with pauses in Window A, transfers with pauses in Window B, and 2-decimal rounding.
+2. **`notification.test.js` (T1 Clock & Outbox)**:
+   - Validated that active subscribers on weekdays receive notifications.
+   - Validated that paused subscribers receive zero notifications.
+   - Validated that weekend clock runs generate zero notifications.
+   - Validated that transferred subscriptions route notifications to the new customer from the transfer date.
+   - Validated strict idempotency of repeated `/clock` runs.
+3. **`import.test.js` (T4 CSV Ingestion)**:
+   - Validated phone cleaning (`+91 98765 43210` $\rightarrow$ `9876543210`).
+   - Validated date parsing across `YYYY-MM-DD`, `DD/MM/YYYY`, and `DD-MM-YYYY`.
+   - Validated duplicate retention and rejection reporting.
+4. **`e2e.test.js` (End-to-End User Flow)**:
+   - Ran an automated 11-step integration test from user registration through customer pause, pro-rated billing, clock simulation, outbox verification, mid-cycle transfer, split billing, and CSV import.

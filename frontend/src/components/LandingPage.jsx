@@ -45,7 +45,7 @@ export default function LandingPage({ onGetStarted }) {
           <div className="feature-card">
             <div className="feature-icon">🧾</div>
             <h3 className="feature-title">Pro-Rated Billing</h3>
-            <p className="feature-desc">Automatically calculate monthly bills based on weekdays served. Paused days and weekends are excluded — fair & transparent.</p>
+            <p className="feature-desc">Automatically calculate monthly bills based on days served. Paused days are deducted proportionally — fair & transparent.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔍</div>
@@ -99,7 +99,7 @@ export default function LandingPage({ onGetStarted }) {
           <div className="feature-card">
             <div className="feature-icon">💰</div>
             <h3 className="feature-title">Fair & Accurate Billing</h3>
-            <p className="feature-desc">Customers are charged only for the weekdays they were actually served — building trust and preventing disputes.</p>
+            <p className="feature-desc">Customers are charged only for the days they were actually served — building trust and preventing disputes.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">📱</div>

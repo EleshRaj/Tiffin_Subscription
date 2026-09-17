@@ -1,5 +1,6 @@
 const db = require('../config/db');
-const { calculateBill } = require('../services/billing.service');
+const { calculateBill, calculateSplitBill } = require('../services/billing.service');
+const { transferSubscription } = require('../services/subscription.service');
 
 /**
  * POST /api/customers/:id/subscribe
@@ -9,7 +10,7 @@ exports.subscribe = (req, res) => {
   try {
     const ownerId = req.user.id;
     const customerId = req.params.id;
-    const { monthlyPrice, startDate } = req.body;
+    const { monthlyPrice, startDate, tiffinType } = req.body;
 
     // Verify customer belongs to owner
     const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND owner_id = ?').get(customerId, ownerId);
@@ -33,13 +34,22 @@ exports.subscribe = (req, res) => {
       return res.status(409).json({ message: 'Customer already has an active subscription. Please manage the existing one.' });
     }
 
+    const selectedTiffin = (tiffinType && tiffinType.trim()) || 'Standard Veg Thali';
+
     const result = db.prepare(
-      'INSERT INTO subscriptions (customer_id, monthly_price, start_date, status) VALUES (?, ?, ?, ?)'
-    ).run(customerId, monthlyPrice, startDate, 'ACTIVE');
+      'INSERT INTO subscriptions (customer_id, monthly_price, start_date, status, tiffin_type) VALUES (?, ?, ?, ?, ?)'
+    ).run(customerId, monthlyPrice, startDate, 'ACTIVE', selectedTiffin);
+
+    const subscriptionId = result.lastInsertRowid;
+
+    // Record initial assignment
+    db.prepare(
+      'INSERT INTO subscription_assignments (subscription_id, customer_id, start_date, end_date) VALUES (?, ?, ?, NULL)'
+    ).run(subscriptionId, customerId, startDate);
 
     res.status(201).json({
       message: 'Subscription created successfully.',
-      subscription: { id: result.lastInsertRowid, monthlyPrice, startDate, status: 'ACTIVE' }
+      subscription: { id: subscriptionId, customerId, monthlyPrice, startDate, status: 'ACTIVE', tiffinType: selectedTiffin }
     });
   } catch (err) {
     console.error('Subscribe error:', err);
@@ -162,10 +172,24 @@ exports.getBill = (req, res) => {
       return res.status(404).json({ message: 'Customer not found.' });
     }
 
-    // Get the subscription (active or paused)
-    const sub = db.prepare(
+    // First, try to get subscription directly attached to customer
+    let sub = db.prepare(
       'SELECT id, monthly_price, start_date, status, tiffin_type FROM subscriptions WHERE customer_id = ?'
     ).get(customerId);
+
+    // If not direct, check if customer was ever part of a subscription assignment
+    if (!sub) {
+      const assignmentSub = db.prepare(`
+        SELECT s.id, s.monthly_price, s.start_date, s.status, s.tiffin_type
+        FROM subscription_assignments sa
+        JOIN subscriptions s ON s.id = sa.subscription_id
+        WHERE sa.customer_id = ?
+        ORDER BY sa.id DESC LIMIT 1
+      `).get(customerId);
+      if (assignmentSub) {
+        sub = assignmentSub;
+      }
+    }
 
     if (!sub) {
       return res.status(404).json({ message: 'No subscription found for this customer.' });
@@ -176,7 +200,23 @@ exports.getBill = (req, res) => {
       'SELECT start_date, end_date FROM pause_periods WHERE subscription_id = ?'
     ).all(sub.id);
 
-    const bill = calculateBill(sub.monthly_price, pauses, month);
+    // Fetch all assignments for this subscription to check for transfers
+    const assignments = db.prepare(`
+      SELECT sa.customer_id, sa.start_date, sa.end_date, c.name as customer_name, c.phone as customer_phone
+      FROM subscription_assignments sa
+      JOIN customers c ON c.id = sa.customer_id
+      WHERE sa.subscription_id = ?
+      ORDER BY sa.id ASC
+    `).all(sub.id);
+
+    let bill;
+    if (assignments.length > 1) {
+      bill = calculateSplitBill(sub.monthly_price, pauses, assignments, month);
+    } else {
+      bill = calculateBill(sub.monthly_price, pauses, month);
+    }
+
+    bill.subscriptionId = sub.id;
     bill.customerName = customer.name;
     bill.customerPhone = customer.phone;
     bill.tiffinType = sub.tiffin_type || 'Standard Veg Thali';
@@ -193,12 +233,39 @@ exports.getBill = (req, res) => {
 };
 
 /**
+ * POST /api/subscriptions/:id/transfer
+ * Transfer a subscription to a new customer mid-cycle.
+ */
+exports.transfer = (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const subscriptionId = parseInt(req.params.id, 10);
+    const { newCustomerId, transferDate } = req.body;
+
+    if (!newCustomerId) {
+      return res.status(400).json({ message: 'Target new customer is required.' });
+    }
+    if (!transferDate) {
+      return res.status(400).json({ message: 'Transfer date is required.' });
+    }
+
+    const result = transferSubscription(ownerId, subscriptionId, parseInt(newCustomerId, 10), transferDate);
+    res.json(result);
+  } catch (err) {
+    console.error('Transfer error:', err);
+    res.status(err.status || 500).json({ message: err.message || 'Internal server error.' });
+  }
+};
+
+/**
  * GET /api/stats/dashboard
  * Aggregated metrics for the owner's dashboard.
  */
 exports.dashboardStats = (req, res) => {
   try {
     const ownerId = req.user.id;
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     const total = db.prepare('SELECT COUNT(*) as count FROM customers WHERE owner_id = ?').get(ownerId);
     const active = db.prepare(
@@ -211,17 +278,31 @@ exports.dashboardStats = (req, res) => {
        JOIN subscriptions s ON s.customer_id = c.id
        WHERE c.owner_id = ? AND s.status = 'PAUSED'`
     ).get(ownerId);
-    const revenueRow = db.prepare(
-      `SELECT COALESCE(SUM(s.monthly_price), 0) as total FROM subscriptions s
+
+    // Calculate actual pro-rated monthly revenue for all subscribed customers
+    const subs = db.prepare(
+      `SELECT s.id, s.monthly_price, s.status FROM subscriptions s
        JOIN customers c ON c.id = s.customer_id
-       WHERE c.owner_id = ? AND s.status = 'ACTIVE'`
-    ).get(ownerId);
+       WHERE c.owner_id = ? AND s.status IN ('ACTIVE', 'PAUSED')`
+    ).all(ownerId);
+
+    let totalMonthRevenue = 0;
+    let baseRunRate = 0;
+    for (const sub of subs) {
+      baseRunRate += (sub.monthly_price || 0);
+      const pauses = db.prepare(
+        'SELECT start_date, end_date FROM pause_periods WHERE subscription_id = ?'
+      ).all(sub.id);
+      const bill = calculateBill(sub.monthly_price, pauses, currentMonth);
+      totalMonthRevenue += (bill.finalAmount || 0);
+    }
 
     res.json({
       totalCustomers: total.count,
       activeCustomers: active.count,
       pausedCustomers: paused.count,
-      estimatedRevenue: revenueRow.total
+      baseRunRate: Math.round(baseRunRate * 100) / 100,
+      estimatedRevenue: Math.round(totalMonthRevenue * 100) / 100
     });
   } catch (err) {
     console.error('Stats error:', err);

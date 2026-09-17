@@ -81,20 +81,22 @@ export default function Dashboard({
     fetchCustomers();
   }, [fetchCustomers]);
 
-  // Handle quick 1-click pause for today when tiffin was not taken
+  // Quick single-day pause helper ("Not Taken Today")
   const handleNotTakenToday = async (customer) => {
-    const today = new Date().toISOString().split('T')[0];
-    if (!window.confirm(`Mark tiffin NOT TAKEN for ${customer.name} today (${today})?\n\nThis will pause today's service and deduct 1 day from the monthly bill.`)) {
-      return;
-    }
+    const todayStr = simDate || new Date().toISOString().slice(0, 10);
     try {
       const res = await apiFetch(`/api/customers/${customer.id}/pause`, {
         method: 'POST',
-        body: JSON.stringify({ startDate: today, endDate: today })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: todayStr,
+          endDate: todayStr
+        })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to mark tiffin not taken');
-      showToast(`Tiffin marked NOT TAKEN for ${customer.name} today (${today})! 1 day deducted.`, 'success');
+      if (!res.ok) throw new Error(data.message || 'Failed to pause service for today');
+
+      showToast(`Tiffin marked NOT TAKEN for ${customer.name} on ${todayStr}! (1 weekday deducted)`, 'success');
       fetchStats();
       fetchCustomers();
     } catch (err) {
@@ -102,11 +104,8 @@ export default function Dashboard({
     }
   };
 
-  // Handle direct Resume action
+  // Direct resume helper
   const handleResume = async (customer) => {
-    if (!window.confirm(`Resume service for ${customer.name}? Daily billing will resume from today.`)) {
-      return;
-    }
     try {
       const res = await apiFetch(`/api/customers/${customer.id}/resume`, { method: 'POST' });
       const data = await res.json();
@@ -153,17 +152,29 @@ export default function Dashboard({
         <div>
           <h1 className="dashboard-title">Tif Tof Operations Dashboard</h1>
           <p className="dashboard-subtitle">
-            Tiffin Subscription Management • Welcome, <strong>{user?.name}</strong>. Monitor customer deliveries, handle pauses, and compute pro-rated bills.
+            Tiffin Subscription Management • Welcome, <strong>{user?.name}</strong>. Mon–Fri weekday deliveries, pause management, and mid-cycle transfers.
           </p>
         </div>
-        <button
-          id="btn-add-customer"
-          type="button"
-          className="btn btn-primary btn-lg"
-          onClick={onAddCustomer}
-        >
-          ➕ Add Customer
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {onOpenImport && (
+            <button
+              id="btn-import-csv"
+              type="button"
+              className="btn btn-secondary btn-lg"
+              onClick={onOpenImport}
+            >
+              📥 Import CSV
+            </button>
+          )}
+          <button
+            id="btn-add-customer"
+            type="button"
+            className="btn btn-primary btn-lg"
+            onClick={onAddCustomer}
+          >
+            ➕ Add Customer
+          </button>
+        </div>
       </div>
 
       {/* ── Key Metrics Cards ─────────────────────────────── */}
@@ -189,9 +200,16 @@ export default function Dashboard({
         <div className="stat-card" style={{ borderLeft: '4px solid var(--clr-primary)' }}>
           <div className="stat-card-icon">💰</div>
           <div className="stat-card-value" style={{ color: 'var(--clr-primary)' }}>
-            ₹{Number(stats.estimatedRevenue).toLocaleString('en-IN')}
+            ₹{Number(stats.estimatedRevenue || 0).toLocaleString('en-IN')}
           </div>
-          <div className="stat-card-label">Monthly Active Run-Rate</div>
+          <div className="stat-card-label">
+            Est. Monthly Revenue (Pro-Rated)
+            {stats.baseRunRate && stats.baseRunRate !== stats.estimatedRevenue ? (
+              <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--clr-text-secondary)', marginTop: '2px', fontWeight: 500 }}>
+                Base MRR: ₹{Number(stats.baseRunRate).toLocaleString('en-IN')}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -369,6 +387,17 @@ export default function Dashboard({
                       >
                         🧾 Bill
                       </button>
+
+                      {onTransferCustomer && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => onTransferCustomer(c)}
+                          title="Transfer subscription to another customer mid-cycle"
+                        >
+                          🔀 Transfer
+                        </button>
+                      )}
 
                       <button
                         type="button"
