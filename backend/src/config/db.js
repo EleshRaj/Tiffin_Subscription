@@ -44,6 +44,7 @@ db.exec(`
     monthly_price REAL    NOT NULL,
     start_date    TEXT    NOT NULL,
     status        TEXT    NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','PAUSED')),
+    tiffin_type   TEXT    DEFAULT 'Standard Veg Thali',
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
@@ -62,5 +63,12 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_pause_sub ON pause_periods(subscription_id);
 `);
+
+// Migration helper for existing databases
+try {
+  db.exec("ALTER TABLE subscriptions ADD COLUMN tiffin_type TEXT DEFAULT 'Standard Veg Thali'");
+} catch (e) {
+  // Column already exists, safe to ignore
+}
 
 module.exports = db;

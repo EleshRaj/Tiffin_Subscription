@@ -1,12 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
+const DEFAULT_TIFFIN_TYPES = [
+  '🥗 Standard Veg Thali (4 Roti, Sabzi, Dal, Rice)',
+  '🍗 Special Non-Veg Thali (Curry, Rice, Roti)',
+  '🌿 Jain Special (Satvik, No Onion/Garlic)',
+  '🍱 Mini Lunch Box (3 Roti, Sabzi, Dal)',
+  '🥑 High-Protein / Diet Box (Sprouts, Paneer, Salad)',
+  '🍱 Both Lunch & Dinner Double Dabba',
+  'Custom'
+];
+
 export default function CustomerModal({ isOpen, onClose, customerToEdit, onSuccess }) {
   const { apiFetch } = useAuth();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [monthlyPrice, setMonthlyPrice] = useState('3000');
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [tiffinTypeChoice, setTiffinTypeChoice] = useState(DEFAULT_TIFFIN_TYPES[0]);
+  const [customTiffinType, setCustomTiffinType] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -16,28 +28,54 @@ export default function CustomerModal({ isOpen, onClose, customerToEdit, onSucce
     if (customerToEdit) {
       setName(customerToEdit.name || '');
       setPhone(customerToEdit.phone || '');
+      const existingType = customerToEdit.tiffin_type || customerToEdit.tiffinType || '';
+      if (DEFAULT_TIFFIN_TYPES.includes(existingType)) {
+        setTiffinTypeChoice(existingType);
+        setCustomTiffinType('');
+      } else if (existingType) {
+        setTiffinTypeChoice('Custom');
+        setCustomTiffinType(existingType);
+      } else {
+        setTiffinTypeChoice(DEFAULT_TIFFIN_TYPES[0]);
+        setCustomTiffinType('');
+      }
     } else {
       setName('');
       setPhone('');
       setMonthlyPrice('3000');
       setStartDate(new Date().toISOString().split('T')[0]);
+      setTiffinTypeChoice(DEFAULT_TIFFIN_TYPES[0]);
+      setCustomTiffinType('');
     }
     setError('');
   }, [customerToEdit, isOpen]);
 
   if (!isOpen) return null;
 
+  const getEffectiveTiffinType = () => {
+    if (tiffinTypeChoice === 'Custom') {
+      return customTiffinType.trim() || 'Custom Meal Plan';
+    }
+    return tiffinTypeChoice;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+
+    const effectiveTiffinType = getEffectiveTiffinType();
 
     try {
       let res;
       if (isEdit) {
         res = await apiFetch(`/api/customers/${customerToEdit.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ name, phone })
+          body: JSON.stringify({
+            name,
+            phone,
+            tiffinType: effectiveTiffinType
+          })
         });
       } else {
         res = await apiFetch('/api/customers', {
@@ -46,7 +84,8 @@ export default function CustomerModal({ isOpen, onClose, customerToEdit, onSucce
             name,
             phone,
             monthlyPrice: parseFloat(monthlyPrice),
-            startDate
+            startDate,
+            tiffinType: effectiveTiffinType
           })
         });
       }
@@ -67,10 +106,10 @@ export default function CustomerModal({ isOpen, onClose, customerToEdit, onSucce
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <h2 className="modal-title" style={{ margin: 0 }}>
-            {isEdit ? '✏️ Edit Customer' : '👤 Add New Customer'}
+            {isEdit ? '✏️ Edit Customer & Tiffin Plan' : '👤 Add New Customer'}
           </h2>
           <button
             type="button"
@@ -110,6 +149,38 @@ export default function CustomerModal({ isOpen, onClose, customerToEdit, onSucce
             />
           </div>
 
+          {/* ── Tiffin Type / Meal Description ──────────────── */}
+          <div className="form-group">
+            <label className="form-label">🍱 Tiffin Service Type / Meal Plan</label>
+            <select
+              id="cust-tiffin-type"
+              className="form-input"
+              value={tiffinTypeChoice}
+              onChange={(e) => setTiffinTypeChoice(e.target.value)}
+            >
+              {DEFAULT_TIFFIN_TYPES.map((t, idx) => (
+                <option key={idx} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {tiffinTypeChoice === 'Custom' && (
+            <div className="form-group">
+              <label className="form-label">Describe Custom Tiffin Service</label>
+              <input
+                id="cust-custom-tiffin"
+                className="form-input"
+                type="text"
+                placeholder="e.g. 2 Roti, Brown Rice, Special Salad, Low Oil"
+                value={customTiffinType}
+                onChange={(e) => setCustomTiffinType(e.target.value)}
+                required
+              />
+            </div>
+          )}
+
           {!isEdit && (
             <>
               <div className="form-group">
@@ -126,7 +197,7 @@ export default function CustomerModal({ isOpen, onClose, customerToEdit, onSucce
                   required
                 />
                 <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-muted)' }}>
-                  Standard monthly rate. Daily billing will pro-rate based on weekdays served.
+                  Standard monthly rate. 7-day daily billing pro-rates based on days served.
                 </span>
               </div>
 

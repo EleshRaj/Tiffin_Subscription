@@ -260,7 +260,7 @@ export default function Dashboard({
           <thead>
             <tr>
               <th onClick={() => handleSortChange('name')}>
-                Customer Name {sortBy === 'name' ? (order === 'asc' ? '▲' : '▼') : ''}
+                Customer & Tiffin Plan {sortBy === 'name' ? (order === 'asc' ? '▲' : '▼') : ''}
               </th>
               <th onClick={() => handleSortChange('phone')}>
                 Phone Number {sortBy === 'phone' ? (order === 'asc' ? '▲' : '▼') : ''}
@@ -307,6 +307,9 @@ export default function Dashboard({
                     >
                       {c.name}
                     </button>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-primary)', marginTop: '2px', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      🍱 {c.tiffin_type || 'Standard Veg Thali'}
+                    </div>
                   </td>
                   <td>
                     <span style={{ fontFamily: 'monospace', fontSize: 'var(--fs-sm)' }}>{c.phone}</span>

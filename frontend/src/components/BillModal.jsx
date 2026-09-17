@@ -91,6 +91,9 @@ export default function BillModal({ isOpen, onClose, customer }) {
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-primary)', fontWeight: 600 }}>
                 Period: {selectedMonth} (7-Day Weekly Service)
               </div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text)', fontWeight: 600, marginTop: '2px' }}>
+                🍱 Tiffin Type: {bill.tiffinType || 'Standard Veg Thali'}
+              </div>
             </div>
 
             <div className="bill-row">

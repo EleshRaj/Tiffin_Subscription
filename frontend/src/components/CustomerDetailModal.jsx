@@ -100,6 +100,12 @@ export default function CustomerDetailModal({
                 <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-secondary)', display: 'block' }}>Delivery Schedule</span>
                 <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--clr-success)' }}>All 7 Days (Mon–Sun)</strong>
               </div>
+              <div style={{ gridColumn: 'span 2', borderTop: '1px solid var(--clr-border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-secondary)', display: 'block' }}>Tiffin Service / Meal Plan</span>
+                <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--clr-primary)' }}>
+                  🍱 {customer.tiffin_type || 'Standard Veg Thali'}
+                </strong>
+              </div>
             </div>
 
             <div className="detail-actions">

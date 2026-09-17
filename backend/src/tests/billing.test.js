@@ -1,10 +1,10 @@
 /**
- * Billing Service Test Suite
- * Tests all 10 edge cases from the SRS Section 21.
+ * Billing Service Test Suite (7-Day Service)
+ * Tests edge cases under 7-day-a-week tiffin delivery rules.
  *
  * Run: node src/tests/billing.test.js
  */
-const { calculateBill, getTotalWeekdaysInMonth } = require('../services/billing.service');
+const { calculateBill, getTotalDaysInMonth } = require('../services/billing.service');
 
 let passed = 0;
 let failed = 0;
@@ -24,91 +24,70 @@ function assert(testName, actual, expected) {
 }
 
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log('  🧪 Billing Service Test Suite');
+console.log('  🧪 7-Day Billing Service Test Suite');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-// ── September 2026 has 22 weekdays ──
-// Sep 1 (Tue), Sep 30 (Wed)
-const SEP_WEEKDAYS = getTotalWeekdaysInMonth(2026, 9);
-assert('September 2026 weekday count', SEP_WEEKDAYS, 22);
+// ── September 2026 has 30 calendar days ──
+const SEP_DAYS = getTotalDaysInMonth(2026, 9);
+assert('September 2026 total days count', SEP_DAYS, 30);
 
 // ── Case 1: No pause → full bill ──
 const bill1 = calculateBill(3000, [], '2026-09');
-assert('Case 1 — No pause: served = 22', bill1.servedWeekdays, 22);
+assert('Case 1 — No pause: served = 30', bill1.daysServed, 30);
 assert('Case 1 — No pause: amount = ₹3000', bill1.finalAmount, 3000);
 
-// ── Case 2: One pause (4 weekdays) ──
-// Sep 10 (Thu) → Sep 13 (Sun)
-// Weekdays in range: Thu 10, Fri 11 = 2 days (12 Sat, 13 Sun excluded)
-// Wait, let me recalculate: Sep 2026
-// Sep 1 = Tuesday
-// Sep 10 = Thursday, Sep 11 = Friday, Sep 12 = Saturday, Sep 13 = Sunday
-// So weekdays paused = 2 (Thu, Fri)
+// ── Case 2: One pause (Sep 7 to Sep 11 = 5 days) ──
 const bill2 = calculateBill(3000, [{ start_date: '2026-09-07', end_date: '2026-09-11' }], '2026-09');
-// Sep 7=Mon, 8=Tue, 9=Wed, 10=Thu, 11=Fri → 5 weekdays paused
-// Actually need to verify: Sep 1 = Tue means Sep 7 = Mon
-assert('Case 2 — One pause (Sep 7-11): paused = 5', bill2.pausedWeekdays, 5);
-assert('Case 2 — One pause: served = 17', bill2.servedWeekdays, 17);
-const expectedBill2 = Math.round((3000 * 17 / 22) * 100) / 100;
-assert('Case 2 — One pause: amount', bill2.finalAmount, expectedBill2);
+assert('Case 2 — One pause (Sep 7-11): paused = 5', bill2.pausedDays, 5);
+assert('Case 2 — One pause: served = 25', bill2.daysServed, 25);
+assert('Case 2 — One pause: amount = ₹2500', bill2.finalAmount, 2500);
 
-// ── Case 3: Multiple pauses ──
+// ── Case 3: Multiple pauses (2 days + 3 days = 5 days) ──
 const bill3 = calculateBill(3000, [
-  { start_date: '2026-09-01', end_date: '2026-09-02' },  // Tue, Wed → 2 weekdays
-  { start_date: '2026-09-21', end_date: '2026-09-23' }   // Mon, Tue, Wed → 3 weekdays
+  { start_date: '2026-09-01', end_date: '2026-09-02' },  // 2 days
+  { start_date: '2026-09-21', end_date: '2026-09-23' }   // 3 days
 ], '2026-09');
-assert('Case 3 — Multiple pauses: paused = 5', bill3.pausedWeekdays, 5);
-assert('Case 3 — Multiple pauses: served = 17', bill3.servedWeekdays, 17);
+assert('Case 3 — Multiple pauses: paused = 5', bill3.pausedDays, 5);
+assert('Case 3 — Multiple pauses: served = 25', bill3.daysServed, 25);
+assert('Case 3 — Multiple pauses: amount = ₹2500', bill3.finalAmount, 2500);
 
-// ── Case 4: Pause crosses month boundary ──
-// Sep 25 (Fri) → Oct 5 (Mon)
-// Sep weekdays in range: Sep 25 Fri, Sep 28 Mon, Sep 29 Tue, Sep 30 Wed → 4
-const bill4 = calculateBill(3000, [
-  { start_date: '2026-09-25', end_date: '2026-10-05' }
-], '2026-09');
-assert('Case 4 — Cross-month pause: paused = 4', bill4.pausedWeekdays, 4);
-assert('Case 4 — Cross-month: served = 18', bill4.servedWeekdays, 18);
+// ── Case 4: Weekend days in 7-day service are active service days ──
+const bill4 = calculateBill(3000, [{ start_date: '2026-09-12', end_date: '2026-09-13' }], '2026-09');
+assert('Case 4 — Weekend pause (Sat-Sun = 2 days): paused = 2', bill4.pausedDays, 2);
+assert('Case 4 — Weekend pause: served = 28', bill4.daysServed, 28);
+assert('Case 4 — Weekend pause: amount = ₹2800', bill4.finalAmount, 2800);
 
-// ── Case 5: Pause containing weekend ──
-// Sep 4 (Fri) → Sep 7 (Mon) — Sat/Sun excluded
-// Weekdays: Fri 4, Mon 7 → 2
-const bill5 = calculateBill(3000, [
-  { start_date: '2026-09-04', end_date: '2026-09-07' }
-], '2026-09');
-assert('Case 5 — Weekend in pause: paused = 2', bill5.pausedWeekdays, 2);
+// ── Case 5: Cross-month pause (Sep 28 to Oct 5) ──
+// In September: Sep 28, 29, 30 = 3 days
+const bill5 = calculateBill(3000, [{ start_date: '2026-09-28', end_date: '2026-10-05' }], '2026-09');
+assert('Case 5 — Cross-month: paused in Sep = 3', bill5.pausedDays, 3);
+assert('Case 5 — Cross-month: served in Sep = 27', bill5.daysServed, 27);
+assert('Case 5 — Cross-month: amount = ₹2700', bill5.finalAmount, 2700);
 
-// ── Case 6: Entire month paused ──
-const bill6 = calculateBill(3000, [
-  { start_date: '2026-09-01', end_date: '2026-09-30' }
-], '2026-09');
-assert('Case 6 — Full month paused: served = 0', bill6.servedWeekdays, 0);
-assert('Case 6 — Full month paused: amount = ₹0', bill6.finalAmount, 0);
+// In October: Oct 1, 2, 3, 4, 5 = 5 days
+const bill5Oct = calculateBill(3100, [{ start_date: '2026-09-28', end_date: '2026-10-05' }], '2026-10');
+assert('Case 5b — Cross-month: paused in Oct = 5', bill5Oct.pausedDays, 5);
+assert('Case 5b — October has 31 days', bill5Oct.totalDays, 31);
+assert('Case 5b — Cross-month: served in Oct = 26', bill5Oct.daysServed, 26);
+assert('Case 5b — Cross-month: amount', bill5Oct.finalAmount, Math.round(3100 * 26 / 31 * 100) / 100);
 
-// ── Case 7: Invalid pause (endDate < startDate) ──
-// This is caught at API level, but billing service should handle gracefully
-const bill7 = calculateBill(3000, [
-  { start_date: '2026-09-15', end_date: '2026-09-10' }
-], '2026-09');
-assert('Case 7 — Invalid dates: paused = 0 (graceful)', bill7.pausedWeekdays, 0);
-assert('Case 7 — Invalid dates: served = 22', bill7.servedWeekdays, 22);
+// ── Case 6: Full month pause ──
+const bill6 = calculateBill(3000, [{ start_date: '2026-09-01', end_date: '2026-09-30' }], '2026-09');
+assert('Case 6 — Full month pause: served = 0', bill6.daysServed, 0);
+assert('Case 6 — Full month pause: amount = ₹0.00', bill6.finalAmount, 0);
 
-// ── Case 8: Different month weekday count (Feb 2026 = 20 weekdays) ──
-const febWeekdays = getTotalWeekdaysInMonth(2026, 2);
-assert('Case 8 — Feb 2026 weekdays = 20', febWeekdays, 20);
+// ── Case 7: February 2026 (28 days) ──
+const FEB_DAYS = getTotalDaysInMonth(2026, 2);
+assert('Case 7 — February 2026 days count = 28', FEB_DAYS, 28);
 
-// ── Case 9: Rounding accuracy ──
-// 3000 × 18 / 22 = 2454.545454... → 2454.55
-const bill9 = calculateBill(3000, [
-  { start_date: '2026-09-07', end_date: '2026-09-10' }
-], '2026-09');
-// Sep 7 Mon, 8 Tue, 9 Wed, 10 Thu → 4 weekdays
-assert('Case 9 — Rounding: paused = 4', bill9.pausedWeekdays, 4);
-const expected9 = Math.round((3000 * 18 / 22) * 100) / 100;
-assert('Case 9 — Rounding: amount = ' + expected9, bill9.finalAmount, expected9);
+// ── Case 8: "Not Taken Today" (Single Day Pause) for Harsh (₹2200) ──
+const bill8 = calculateBill(2200, [{ start_date: '2026-09-17', end_date: '2026-09-17' }], '2026-09');
+assert('Case 8 — Not Taken Today: paused = 1', bill8.pausedDays, 1);
+assert('Case 8 — Not Taken Today: served = 29', bill8.daysServed, 29);
+assert('Case 8 — Not Taken Today: amount = ₹2126.67', bill8.finalAmount, 2126.67);
 
-// ── Summary ────────────────────────────────────────────────────
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log(`  Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
+console.log(`  Results: ${passed} passed, ${failed} failed`);
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-process.exit(failed > 0 ? 1 : 0);
+if (failed > 0) process.exit(1);

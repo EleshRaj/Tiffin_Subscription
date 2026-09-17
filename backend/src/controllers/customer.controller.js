@@ -10,7 +10,7 @@ const ALLOWED_SORT_FIELDS = ['name', 'phone', 'created_at', 'monthly_price', 'st
 exports.create = (req, res) => {
   try {
     const ownerId = req.user.id;
-    const { name, phone, monthlyPrice, startDate } = req.body;
+    const { name, phone, monthlyPrice, startDate, tiffinType } = req.body;
 
     // Validation
     if (!name || !phone) {
@@ -23,6 +23,8 @@ exports.create = (req, res) => {
       return res.status(400).json({ message: 'Subscription start date is required.' });
     }
 
+    const selectedTiffinType = (tiffinType && tiffinType.trim()) || 'Standard Veg Thali';
+
     // Insert customer
     const custResult = db.prepare(
       'INSERT INTO customers (owner_id, name, phone) VALUES (?, ?, ?)'
@@ -32,12 +34,12 @@ exports.create = (req, res) => {
 
     // Create active subscription
     db.prepare(
-      'INSERT INTO subscriptions (customer_id, monthly_price, start_date, status) VALUES (?, ?, ?, ?)'
-    ).run(customerId, monthlyPrice, startDate, 'ACTIVE');
+      'INSERT INTO subscriptions (customer_id, monthly_price, start_date, status, tiffin_type) VALUES (?, ?, ?, ?, ?)'
+    ).run(customerId, monthlyPrice, startDate, 'ACTIVE', selectedTiffinType);
 
     res.status(201).json({
       message: 'Customer created and subscribed successfully.',
-      customer: { id: customerId, name, phone, monthlyPrice, startDate, status: 'ACTIVE' }
+      customer: { id: customerId, name, phone, monthlyPrice, startDate, status: 'ACTIVE', tiffinType: selectedTiffinType }
     });
   } catch (err) {
     console.error('Create customer error:', err);
@@ -89,7 +91,7 @@ exports.list = (req, res) => {
     // Fetch page
     const customers = db.prepare(
       `SELECT c.id, c.name, c.phone, c.created_at,
-              s.monthly_price, s.start_date, s.status, s.id as subscription_id
+              s.monthly_price, s.start_date, s.status, s.tiffin_type, s.id as subscription_id
        FROM customers c
        LEFT JOIN subscriptions s ON s.customer_id = c.id
        ${whereClause}
@@ -121,7 +123,7 @@ exports.getById = (req, res) => {
 
     const customer = db.prepare(
       `SELECT c.id, c.name, c.phone, c.created_at,
-              s.id as subscription_id, s.monthly_price, s.start_date, s.status
+              s.id as subscription_id, s.monthly_price, s.start_date, s.status, s.tiffin_type
        FROM customers c
        LEFT JOIN subscriptions s ON s.customer_id = c.id
        WHERE c.id = ? AND c.owner_id = ?`
@@ -152,7 +154,7 @@ exports.update = (req, res) => {
   try {
     const ownerId = req.user.id;
     const customerId = req.params.id;
-    const { name, phone, monthlyPrice } = req.body;
+    const { name, phone, monthlyPrice, tiffinType } = req.body;
 
     const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND owner_id = ?').get(customerId, ownerId);
     if (!customer) {
@@ -163,6 +165,9 @@ exports.update = (req, res) => {
     if (phone) db.prepare('UPDATE customers SET phone = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(phone, customerId);
     if (monthlyPrice && monthlyPrice > 0) {
       db.prepare('UPDATE subscriptions SET monthly_price = ?, updated_at = CURRENT_TIMESTAMP WHERE customer_id = ?').run(monthlyPrice, customerId);
+    }
+    if (tiffinType) {
+      db.prepare('UPDATE subscriptions SET tiffin_type = ?, updated_at = CURRENT_TIMESTAMP WHERE customer_id = ?').run(tiffinType, customerId);
     }
 
     res.json({ message: 'Customer updated successfully.' });

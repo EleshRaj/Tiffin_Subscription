@@ -164,7 +164,7 @@ exports.getBill = (req, res) => {
 
     // Get the subscription (active or paused)
     const sub = db.prepare(
-      'SELECT id, monthly_price, start_date, status FROM subscriptions WHERE customer_id = ?'
+      'SELECT id, monthly_price, start_date, status, tiffin_type FROM subscriptions WHERE customer_id = ?'
     ).get(customerId);
 
     if (!sub) {
@@ -179,6 +179,7 @@ exports.getBill = (req, res) => {
     const bill = calculateBill(sub.monthly_price, pauses, month);
     bill.customerName = customer.name;
     bill.customerPhone = customer.phone;
+    bill.tiffinType = sub.tiffin_type || 'Standard Veg Thali';
     bill.pauseDetails = pauses.map(p => ({
       start: p.start_date,
       end: p.end_date
