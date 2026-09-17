@@ -5,8 +5,11 @@ export default function Dashboard({
   onAddCustomer,
   onEditCustomer,
   onPauseCustomer,
+  onTransferCustomer,
   onViewBill,
   onViewDetails,
+  onOpenImport,
+  simDate,
   showToast
 }) {
   const { apiFetch, user } = useAuth();
